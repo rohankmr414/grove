@@ -20,30 +20,21 @@ type pickerModel struct {
 	displays   []string
 	matches    []int
 	cursor     int
+	width      int
+	height     int
 	selected   map[int]struct{}
 	cancelled  bool
 	confirmed  bool
 }
 
 var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("230"))
-	subtitleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245"))
-	activeRowStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("230")).
-			Background(lipgloss.Color("25")).
-			Padding(0, 1)
-	rowStyle = lipgloss.NewStyle().
-			Padding(0, 1)
+	promptStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	metaStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("186"))
+	faintStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	cursorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	activeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("42")).
-			Bold(true)
-	mutedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("242"))
-	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("244"))
+			Foreground(lipgloss.Color("255"))
 )
 
 func PickRepositories(candidates []repo.RepoCandidate) ([]repo.RepoCandidate, error) {
@@ -73,8 +64,8 @@ func PickRepositories(candidates []repo.RepoCandidate) ([]repo.RepoCandidate, er
 
 func newPickerModel(candidates []repo.RepoCandidate) pickerModel {
 	input := textinput.New()
-	input.Prompt = "Search> "
-	input.Placeholder = "type to fuzzy filter repositories"
+	input.Prompt = promptStyle.Render("> ")
+	input.Placeholder = ""
 	input.Focus()
 	input.CharLimit = 256
 
@@ -99,6 +90,10 @@ func (m pickerModel) Init() tea.Cmd {
 
 func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
@@ -138,26 +133,16 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m pickerModel) View() string {
 	var builder strings.Builder
 
-	builder.WriteString(titleStyle.Render("Repository Picker"))
-	builder.WriteString("\n")
-	builder.WriteString(subtitleStyle.Render("Multi-select repositories for this workspace"))
-	builder.WriteString("\n\n")
-
 	if len(m.matches) == 0 {
-		builder.WriteString(mutedStyle.Render("  No matching repositories."))
-		builder.WriteString("\n\n")
+		builder.WriteString(faintStyle.Render("  no matches"))
+		builder.WriteString("\n")
 		builder.WriteString(statusLine(m))
 		builder.WriteString("\n")
 		builder.WriteString(searchLine(m))
-		builder.WriteString("\n")
-		builder.WriteString(helpLine())
 		return builder.String()
 	}
 
-	limit := len(m.matches)
-	if limit > maxVisibleResults {
-		limit = maxVisibleResults
-	}
+	limit := m.visibleRows()
 
 	start := 0
 	if m.cursor >= limit {
@@ -170,55 +155,50 @@ func (m pickerModel) View() string {
 
 	for visibleIndex := start; visibleIndex < end; visibleIndex++ {
 		matchIndex := m.matches[visibleIndex]
-		pointer := " "
-		if visibleIndex == m.cursor {
-			pointer = "▌"
-		}
+		gutter := " "
+		lineStyle := lipgloss.NewStyle()
 
-		marker := "○"
 		if _, ok := m.selected[matchIndex]; ok {
-			marker = selectedStyle.Render("●")
+			gutter = cursorStyle.Render("▌")
+			lineStyle = selectedStyle
+		}
+		if visibleIndex == m.cursor {
+			gutter = cursorStyle.Render("▌")
+			lineStyle = activeStyle
 		}
 
-		line := fmt.Sprintf("%s %s  %s", pointer, marker, m.candidates[matchIndex].DisplayName())
-		if visibleIndex == m.cursor {
-			builder.WriteString(activeRowStyle.Render(line))
-		} else {
-			builder.WriteString(rowStyle.Render(line))
-		}
-		builder.WriteString("\n")
+		builder.WriteString(fmt.Sprintf("%s %s\n", gutter, lineStyle.Render(m.candidates[matchIndex].DisplayName())))
 	}
 
 	if len(m.matches) > end {
-		builder.WriteString("\n")
-		builder.WriteString(mutedStyle.Render(fmt.Sprintf("... %d more matches", len(m.matches)-end)))
+		builder.WriteString(faintStyle.Render(fmt.Sprintf("... %d more", len(m.matches)-end)))
 		builder.WriteString("\n")
 	}
 
-	builder.WriteString("\n")
 	builder.WriteString(statusLine(m))
 	builder.WriteString("\n")
 	builder.WriteString(searchLine(m))
-	builder.WriteString("\n")
-	builder.WriteString(helpLine())
 
 	return builder.String()
 }
 
 func statusLine(m pickerModel) string {
-	return subtitleStyle.Render(fmt.Sprintf("%d matches  •  %d selected", len(m.matches), len(m.selected)))
+	summary := metaStyle.Render(fmt.Sprintf("%d/%d", len(m.matches), len(m.candidates)))
+	if len(m.selected) > 0 {
+		summary += " " + metaStyle.Render(fmt.Sprintf("(%d)", len(m.selected)))
+	}
+	separatorWidth := 36
+	if m.width > 0 {
+		separatorWidth = m.width - lipgloss.Width(summary) - 1
+	}
+	if separatorWidth < 8 {
+		separatorWidth = 8
+	}
+	return summary + " " + faintStyle.Render(strings.Repeat("─", separatorWidth))
 }
 
 func searchLine(m pickerModel) string {
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("63")).
-		Padding(0, 1).
-		Render(m.input.View())
-}
-
-func helpLine() string {
-	return helpStyle.Render("↑/↓ move  tab/space toggle  enter confirm  esc cancel")
+	return m.input.View()
 }
 
 func (m *pickerModel) refreshMatches() {
@@ -259,6 +239,28 @@ func (m *pickerModel) toggleCurrent() {
 		return
 	}
 	m.selected[current] = struct{}{}
+}
+
+func (m pickerModel) visibleRows() int {
+	if m.height <= 0 {
+		if len(m.matches) < maxVisibleResults {
+			return len(m.matches)
+		}
+		return maxVisibleResults
+	}
+
+	footerRows := 2
+	visible := m.height - footerRows
+	if visible < 1 {
+		return 1
+	}
+	if visible > maxVisibleResults {
+		visible = maxVisibleResults
+	}
+	if visible > len(m.matches) {
+		return len(m.matches)
+	}
+	return visible
 }
 
 func collectSelected(candidates []repo.RepoCandidate, selected map[int]struct{}) []repo.RepoCandidate {
