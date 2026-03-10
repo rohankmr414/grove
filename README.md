@@ -126,7 +126,7 @@ Print a workspace path:
 
 ## Shell Integration
 
-`grove cd` requires shell integration because a subprocess cannot change the parent shell's working directory.
+`grove cd` and auto-jumping after `grove init` require shell integration because a subprocess cannot change the parent shell's working directory.
 
 Enable it for the current shell:
 
@@ -138,6 +138,12 @@ Then:
 
 ```bash
 grove cd auth-feature
+```
+
+With shell integration enabled, this will also drop you into the workspace after a successful init:
+
+```bash
+grove init auth-feature
 ```
 
 The generated shell integration also adds completion for:
