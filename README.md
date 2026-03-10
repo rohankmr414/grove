@@ -239,3 +239,7 @@ feature/<workspace>
 ```
 
 If that branch does not exist, `grove` creates it from the repository default branch.
+
+Each workspace also includes VS Code metadata:
+
+- `.vscode/settings.json` enables Git repository detection in subfolders and scans two levels deep, so opening the workspace root with `code .` finds each repo more reliably.

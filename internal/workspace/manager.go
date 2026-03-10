@@ -86,7 +86,7 @@ func (m Manager) AddRepositories(ctx context.Context, ws Workspace, candidates [
 			return fmt.Errorf("create worktree for %s: %w", candidate.DisplayName(), err)
 		}
 	}
-	return nil
+	return m.syncEditorWorkspace(ws)
 }
 
 type preparedRepository struct {
@@ -344,7 +344,7 @@ func (m Manager) RemoveRepositories(ctx context.Context, ws Workspace, names ...
 		}
 	}
 
-	return nil
+	return m.syncEditorWorkspace(ws)
 }
 
 func (m Manager) List() ([]Workspace, error) {
