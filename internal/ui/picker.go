@@ -218,12 +218,11 @@ func (m *pickerModel) refreshMatches() {
 			m.matches = append(m.matches, index)
 		}
 	} else {
-		displays := make([]string, 0, len(m.candidates))
+		searchKeys := make([]string, 0, len(m.candidates))
 		for _, candidate := range m.candidates {
-			displays = append(displays, candidate.DisplayName())
+			searchKeys = append(searchKeys, candidateSearchKey(candidate))
 		}
-		results := fuzzy.Find(query, displays)
-		for _, result := range results {
+		for _, result := range fuzzy.Find(query, searchKeys) {
 			m.matches = append(m.matches, result.Index)
 		}
 	}
@@ -238,6 +237,16 @@ func (m *pickerModel) refreshMatches() {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+}
+
+func candidateSearchKey(candidate repo.RepoCandidate) string {
+	if candidate.FullName != "" {
+		return candidate.FullName
+	}
+	if candidate.Name != "" {
+		return candidate.Name
+	}
+	return candidate.DisplayName()
 }
 
 func (m *pickerModel) toggleCurrent() {
