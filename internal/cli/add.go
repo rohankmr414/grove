@@ -26,12 +26,12 @@ func runAdd(args []string) error {
 		return err
 	}
 
-	source, err := repo.NewSource(context.Background(), cfg)
+	candidates, err := repo.Discover(context.Background(), cfg)
 	if err != nil {
 		return err
 	}
 
-	selected, err := ui.PickRepositories(source.Initial, source.Search)
+	selected, err := ui.PickRepositories(candidates)
 	if err != nil {
 		return err
 	}

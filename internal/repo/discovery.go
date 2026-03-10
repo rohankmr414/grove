@@ -6,34 +6,22 @@ import (
 	"github.com/rohankmr414/grove/internal/config"
 )
 
-type SearchFunc func(context.Context, string) ([]RepoCandidate, error)
-
-type Source struct {
-	Initial []RepoCandidate
-	Search  SearchFunc
-}
-
-func NewSource(ctx context.Context, cfg config.Config) (Source, error) {
+func Discover(ctx context.Context, cfg config.Config) ([]RepoCandidate, error) {
 	cachedRepos, err := DiscoverCached(ctx, cfg.RepoCacheRoot)
 	if err != nil {
-		return Source{}, err
+		return nil, err
 	}
 
-	cachedGitHubRepos, err := loadCachedGitHubCandidates()
-	if err != nil {
-		cachedGitHubRepos = nil
-	}
-
-	all := make([]RepoCandidate, 0, len(cachedRepos)+len(cachedGitHubRepos))
+	all := make([]RepoCandidate, 0, len(cachedRepos))
 	all = append(all, cachedRepos...)
-	all = append(all, cachedGitHubRepos...)
 
-	return Source{
-		Initial: dedupe(all),
-		Search: func(ctx context.Context, query string) ([]RepoCandidate, error) {
-			return SearchGitHub(ctx, cfg, query)
-		},
-	}, nil
+	ghRepos, err := DiscoverGitHub(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	all = append(all, ghRepos...)
+
+	return dedupe(all), nil
 }
 
 func dedupe(input []RepoCandidate) []RepoCandidate {

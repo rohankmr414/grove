@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,37 +24,36 @@ type githubAPIRepo struct {
 	UpdatedAt     string `json:"updated_at"`
 }
 
-type githubSearchResponse struct {
-	Items []githubAPIRepo `json:"items"`
-}
-
-func SearchGitHub(ctx context.Context, cfg config.Config, query string) ([]RepoCandidate, error) {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return nil, nil
-	}
-
+func DiscoverGitHub(ctx context.Context, cfg config.Config) ([]RepoCandidate, error) {
 	if !cfg.GitHub.Enabled {
-		return searchCachedGitHubCandidates(query)
+		return loadCachedGitHubCandidates()
 	}
 
 	token := githubToken(ctx)
 	if token == "" {
-		return searchCachedGitHubCandidates(query)
+		return loadCachedGitHubCandidates()
 	}
 
 	var apiRepos []githubAPIRepo
 	if len(cfg.GitHub.Orgs) == 0 {
-		repos, err := searchUserRepos(ctx, token, query)
+		repos, err := fetchUserRepos(ctx, token)
 		if err != nil {
-			return searchCachedGitHubCandidates(query)
+			cached, cacheErr := loadGitHubCache()
+			if cacheErr == nil {
+				return cached, nil
+			}
+			return nil, err
 		}
 		apiRepos = append(apiRepos, repos...)
 	} else {
 		for _, org := range cfg.GitHub.Orgs {
-			repos, err := searchOrgRepos(ctx, token, org, query)
+			repos, err := fetchOrgRepos(ctx, token, org)
 			if err != nil {
-				return searchCachedGitHubCandidates(query)
+				cached, cacheErr := loadGitHubCache()
+				if cacheErr == nil {
+					return cached, nil
+				}
+				return nil, err
 			}
 			apiRepos = append(apiRepos, repos...)
 		}
@@ -96,78 +94,50 @@ func githubToken(ctx context.Context) string {
 	return strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
 }
 
-func searchOrgRepos(ctx context.Context, token, org, query string) ([]githubAPIRepo, error) {
-	searchQuery := fmt.Sprintf("%s in:name org:%s archived:false", query, org)
-	return searchGitHubRepos(ctx, token, searchQuery)
+func fetchOrgRepos(ctx context.Context, token, org string) ([]githubAPIRepo, error) {
+	url := fmt.Sprintf("https://api.github.com/orgs/%s/repos?per_page=100&page=%%d", org)
+	return fetchGitHubRepoPages(ctx, token, url)
 }
 
-func searchUserRepos(ctx context.Context, token, query string) ([]githubAPIRepo, error) {
-	login, err := fetchViewerLogin(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-	searchQuery := fmt.Sprintf("%s in:name user:%s archived:false", query, login)
-	return searchGitHubRepos(ctx, token, searchQuery)
+func fetchUserRepos(ctx context.Context, token string) ([]githubAPIRepo, error) {
+	return fetchGitHubRepoPages(ctx, token, "https://api.github.com/user/repos?per_page=100&affiliation=owner,collaborator,organization_member&page=%d")
 }
 
-func searchGitHubRepos(ctx context.Context, token, query string) ([]githubAPIRepo, error) {
+func fetchGitHubRepoPages(ctx context.Context, token, urlFormat string) ([]githubAPIRepo, error) {
 	client := &http.Client{}
-	endpoint := "https://api.github.com/search/repositories?q=" + url.QueryEscape(query) + "&per_page=50"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	var result []githubAPIRepo
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	for page := 1; ; page++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(urlFormat, page), nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("github api returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("github api returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		}
+
+		var pageRepos []githubAPIRepo
+		if err := json.Unmarshal(body, &pageRepos); err != nil {
+			return nil, fmt.Errorf("decode github response: %w", err)
+		}
+		result = append(result, pageRepos...)
+		if len(pageRepos) < 100 {
+			break
+		}
 	}
 
-	var payload githubSearchResponse
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, fmt.Errorf("decode github search response: %w", err)
-	}
-	return payload.Items, nil
-}
-
-func fetchViewerLogin(ctx context.Context, token string) (string, error) {
-	client := &http.Client{}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user", nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return "", fmt.Errorf("github api returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	var payload struct {
-		Login string `json:"login"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return "", err
-	}
-	if payload.Login == "" {
-		return "", fmt.Errorf("github user login not found")
-	}
-	return payload.Login, nil
+	return result, nil
 }
 
 func cachePath() (string, error) {
@@ -199,31 +169,6 @@ func loadCachedGitHubCandidates() ([]RepoCandidate, error) {
 		return nil, err
 	}
 	return repos, nil
-}
-
-func searchCachedGitHubCandidates(query string) ([]RepoCandidate, error) {
-	repos, err := loadCachedGitHubCandidates()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	query = strings.ToLower(strings.TrimSpace(query))
-	if query == "" {
-		return repos, nil
-	}
-
-	filtered := make([]RepoCandidate, 0, len(repos))
-	for _, candidate := range repos {
-		name := strings.ToLower(candidate.DisplayName())
-		full := strings.ToLower(candidate.FullName)
-		if strings.Contains(name, query) || strings.Contains(full, query) {
-			filtered = append(filtered, candidate)
-		}
-	}
-	return filtered, nil
 }
 
 func saveGitHubCache(repos []RepoCandidate) error {

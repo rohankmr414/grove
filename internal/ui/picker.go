@@ -1,11 +1,9 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,43 +13,18 @@ import (
 )
 
 const maxVisibleResults = 12
-const searchDebounce = 250 * time.Millisecond
-const spinnerTickRate = 100 * time.Millisecond
 
 type pickerModel struct {
 	input      textinput.Model
 	candidates []repo.RepoCandidate
-	base       []repo.RepoCandidate
-	remote     []repo.RepoCandidate
 	matches    []int
 	cursor     int
 	width      int
 	height     int
 	selected   map[int]struct{}
-	search     repo.SearchFunc
-	searchSeq  int
-	lastErr    string
-	loading    bool
-	spinner    int
 	cancelled  bool
 	confirmed  bool
 }
-
-type searchTickMsg struct {
-	seq   int
-	query string
-}
-
-type searchResultsMsg struct {
-	seq        int
-	query      string
-	candidates []repo.RepoCandidate
-	err        error
-}
-
-type spinnerTickMsg struct{}
-
-var spinnerFrames = []string{"-", "\\", "|", "/"}
 
 var (
 	promptStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
@@ -64,12 +37,12 @@ var (
 	selectedStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 )
 
-func PickRepositories(candidates []repo.RepoCandidate, search repo.SearchFunc) ([]repo.RepoCandidate, error) {
-	if len(candidates) == 0 && search == nil {
+func PickRepositories(candidates []repo.RepoCandidate) ([]repo.RepoCandidate, error) {
+	if len(candidates) == 0 {
 		return nil, nil
 	}
 
-	model := newPickerModel(candidates, search)
+	model := newPickerModel(candidates)
 	result, err := tea.NewProgram(model, tea.WithAltScreen()).Run()
 	if err != nil {
 		return nil, err
@@ -89,7 +62,7 @@ func PickRepositories(candidates []repo.RepoCandidate, search repo.SearchFunc) (
 	return collectSelected(finalModel.candidates, finalModel.selected), nil
 }
 
-func newPickerModel(candidates []repo.RepoCandidate, search repo.SearchFunc) pickerModel {
+func newPickerModel(candidates []repo.RepoCandidate) pickerModel {
 	input := textinput.New()
 	input.Prompt = promptStyle.Render("> ")
 	input.Placeholder = "type to search"
@@ -99,10 +72,8 @@ func newPickerModel(candidates []repo.RepoCandidate, search repo.SearchFunc) pic
 
 	model := pickerModel{
 		input:      input,
-		base:       candidates,
 		candidates: candidates,
 		selected:   make(map[int]struct{}),
-		search:     search,
 	}
 	model.refreshMatches()
 	return model
@@ -118,34 +89,6 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
-	case searchTickMsg:
-		if msg.seq != m.searchSeq || m.search == nil || strings.TrimSpace(msg.query) == "" {
-			return m, nil
-		}
-		m.loading = true
-		return m, tea.Batch(m.runSearch(msg.query, msg.seq), spinnerTick())
-	case searchResultsMsg:
-		if msg.seq != m.searchSeq {
-			return m, nil
-		}
-		m.loading = false
-		m.spinner = 0
-		if msg.err != nil {
-			m.lastErr = msg.err.Error()
-			m.remote = nil
-		} else {
-			m.lastErr = ""
-			m.remote = msg.candidates
-		}
-		m.rebuildCandidates()
-		m.refreshMatches()
-		return m, nil
-	case spinnerTickMsg:
-		if !m.loading {
-			return m, nil
-		}
-		m.spinner = (m.spinner + 1) % len(spinnerFrames)
-		return m, spinnerTick()
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
@@ -180,15 +123,8 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	previous := m.input.Value()
 	m.input, cmd = m.input.Update(msg)
 	if previous != m.input.Value() {
-		if len(strings.TrimSpace(m.input.Value())) < 2 {
-			m.remote = nil
-			m.lastErr = ""
-			m.loading = false
-			m.spinner = 0
-		}
-		m.rebuildCandidates()
 		m.refreshMatches()
-		return m, tea.Batch(cmd, m.scheduleSearchCmd())
+		return m, cmd
 	}
 	m.refreshMatches()
 	return m, cmd
@@ -199,10 +135,6 @@ func (m pickerModel) View() string {
 
 	if len(m.matches) == 0 {
 		builder.WriteString(faintStyle.Render("  no matches"))
-		if m.lastErr != "" {
-			builder.WriteString("\n")
-			builder.WriteString(faintStyle.Render("  github search unavailable"))
-		}
 		builder.WriteString("\n")
 		content := builder.String()
 		footer := statusLine(m) + "\n" + searchLine(m)
@@ -257,9 +189,6 @@ func statusLine(m pickerModel) string {
 	if len(m.selected) > 0 {
 		summary += " " + metaStyle.Render(fmt.Sprintf("(%d)", len(m.selected)))
 	}
-	if m.loading {
-		summary += " " + promptStyle.Render(spinnerFrames[m.spinner]+" searching")
-	}
 	separatorWidth := 36
 	if m.width > 0 {
 		separatorWidth = m.width - lipgloss.Width(summary) - 1
@@ -268,12 +197,6 @@ func statusLine(m pickerModel) string {
 		separatorWidth = 8
 	}
 	return summary + " " + faintStyle.Render(strings.Repeat("─", separatorWidth))
-}
-
-func spinnerTick() tea.Cmd {
-	return tea.Tick(spinnerTickRate, func(time.Time) tea.Msg {
-		return spinnerTickMsg{}
-	})
 }
 
 func searchLine(m pickerModel) string {
@@ -355,34 +278,6 @@ func (m pickerModel) layout(content, footer string) string {
 	return builder.String()
 }
 
-func (m *pickerModel) rebuildCandidates() {
-	m.candidates = dedupeCandidates(append(append([]repo.RepoCandidate{}, m.base...), m.remote...))
-}
-
-func (m *pickerModel) scheduleSearchCmd() tea.Cmd {
-	query := strings.TrimSpace(m.input.Value())
-	m.searchSeq++
-	seq := m.searchSeq
-	if m.search == nil || len(query) < 2 {
-		return nil
-	}
-	return tea.Tick(searchDebounce, func(time.Time) tea.Msg {
-		return searchTickMsg{seq: seq, query: query}
-	})
-}
-
-func (m pickerModel) runSearch(query string, seq int) tea.Cmd {
-	return func() tea.Msg {
-		candidates, err := m.search(context.Background(), query)
-		return searchResultsMsg{
-			seq:        seq,
-			query:      query,
-			candidates: candidates,
-			err:        err,
-		}
-	}
-}
-
 func (m pickerModel) visibleRows() int {
 	if m.height <= 0 {
 		if len(m.matches) < maxVisibleResults {
@@ -415,30 +310,6 @@ func collectSelected(candidates []repo.RepoCandidate, selected map[int]struct{})
 	result := make([]repo.RepoCandidate, 0, len(indexes))
 	for _, index := range indexes {
 		result = append(result, candidates[index])
-	}
-	return result
-}
-
-func dedupeCandidates(input []repo.RepoCandidate) []repo.RepoCandidate {
-	seen := make(map[string]repo.RepoCandidate, len(input))
-	order := make([]string, 0, len(input))
-	for _, candidate := range input {
-		key := candidate.FullName
-		if key == "" {
-			key = candidate.CloneURL
-		}
-		if key == "" {
-			key = candidate.LocalPath
-		}
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = candidate
-		order = append(order, key)
-	}
-	result := make([]repo.RepoCandidate, 0, len(order))
-	for _, key := range order {
-		result = append(result, seen[key])
 	}
 	return result
 }
