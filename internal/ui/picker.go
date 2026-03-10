@@ -16,6 +16,7 @@ import (
 
 const maxVisibleResults = 12
 const searchDebounce = 250 * time.Millisecond
+const spinnerTickRate = 100 * time.Millisecond
 
 type pickerModel struct {
 	input      textinput.Model
@@ -29,8 +30,9 @@ type pickerModel struct {
 	selected   map[int]struct{}
 	search     repo.SearchFunc
 	searchSeq  int
-	lastQuery  string
 	lastErr    string
+	loading    bool
+	spinner    int
 	cancelled  bool
 	confirmed  bool
 }
@@ -47,14 +49,19 @@ type searchResultsMsg struct {
 	err        error
 }
 
+type spinnerTickMsg struct{}
+
+var spinnerFrames = []string{"-", "\\", "|", "/"}
+
 var (
-	promptStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
-	metaStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("186"))
-	faintStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	cursorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-	activeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
-	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("255"))
+	promptStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	metaStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("186"))
+	faintStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	cursorStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	selectedGutterStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	selectedCursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+	activeStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
+	selectedStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 )
 
 func PickRepositories(candidates []repo.RepoCandidate, search repo.SearchFunc) ([]repo.RepoCandidate, error) {
@@ -85,7 +92,8 @@ func PickRepositories(candidates []repo.RepoCandidate, search repo.SearchFunc) (
 func newPickerModel(candidates []repo.RepoCandidate, search repo.SearchFunc) pickerModel {
 	input := textinput.New()
 	input.Prompt = promptStyle.Render("> ")
-	input.Placeholder = ""
+	input.Placeholder = "type to search"
+	input.PlaceholderStyle = faintStyle
 	input.Focus()
 	input.CharLimit = 256
 
@@ -114,11 +122,14 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != m.searchSeq || m.search == nil || strings.TrimSpace(msg.query) == "" {
 			return m, nil
 		}
-		return m, m.runSearch(msg.query, msg.seq)
+		m.loading = true
+		return m, tea.Batch(m.runSearch(msg.query, msg.seq), spinnerTick())
 	case searchResultsMsg:
 		if msg.seq != m.searchSeq {
 			return m, nil
 		}
+		m.loading = false
+		m.spinner = 0
 		if msg.err != nil {
 			m.lastErr = msg.err.Error()
 			m.remote = nil
@@ -129,6 +140,12 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rebuildCandidates()
 		m.refreshMatches()
 		return m, nil
+	case spinnerTickMsg:
+		if !m.loading {
+			return m, nil
+		}
+		m.spinner = (m.spinner + 1) % len(spinnerFrames)
+		return m, spinnerTick()
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
@@ -166,6 +183,8 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(strings.TrimSpace(m.input.Value())) < 2 {
 			m.remote = nil
 			m.lastErr = ""
+			m.loading = false
+			m.spinner = 0
 		}
 		m.rebuildCandidates()
 		m.refreshMatches()
@@ -185,10 +204,9 @@ func (m pickerModel) View() string {
 			builder.WriteString(faintStyle.Render("  github search unavailable"))
 		}
 		builder.WriteString("\n")
-		builder.WriteString(statusLine(m))
-		builder.WriteString("\n")
-		builder.WriteString(searchLine(m))
-		return builder.String()
+		content := builder.String()
+		footer := statusLine(m) + "\n" + searchLine(m)
+		return m.layout(content, footer)
 	}
 
 	limit := m.visibleRows()
@@ -204,16 +222,23 @@ func (m pickerModel) View() string {
 
 	for visibleIndex := start; visibleIndex < end; visibleIndex++ {
 		matchIndex := m.matches[visibleIndex]
+		_, isSelected := m.selected[matchIndex]
+		isActive := visibleIndex == m.cursor
+
 		gutter := " "
 		lineStyle := lipgloss.NewStyle()
 
-		if _, ok := m.selected[matchIndex]; ok {
-			gutter = cursorStyle.Render("▌")
+		if isSelected {
+			gutter = selectedGutterStyle.Render("▪")
 			lineStyle = selectedStyle
 		}
-		if visibleIndex == m.cursor {
+		if isActive {
 			gutter = cursorStyle.Render("▌")
 			lineStyle = activeStyle
+		}
+		if isSelected && isActive {
+			gutter = selectedCursorStyle.Render("▌")
+			lineStyle = activeStyle.Bold(true)
 		}
 
 		builder.WriteString(fmt.Sprintf("%s %s\n", gutter, lineStyle.Render(m.candidates[matchIndex].DisplayName())))
@@ -224,17 +249,16 @@ func (m pickerModel) View() string {
 		builder.WriteString("\n")
 	}
 
-	builder.WriteString(statusLine(m))
-	builder.WriteString("\n")
-	builder.WriteString(searchLine(m))
-
-	return builder.String()
+	return m.layout(builder.String(), statusLine(m)+"\n"+searchLine(m))
 }
 
 func statusLine(m pickerModel) string {
 	summary := metaStyle.Render(fmt.Sprintf("%d/%d", len(m.matches), len(m.candidates)))
 	if len(m.selected) > 0 {
 		summary += " " + metaStyle.Render(fmt.Sprintf("(%d)", len(m.selected)))
+	}
+	if m.loading {
+		summary += " " + promptStyle.Render(spinnerFrames[m.spinner]+" searching")
 	}
 	separatorWidth := 36
 	if m.width > 0 {
@@ -244,6 +268,12 @@ func statusLine(m pickerModel) string {
 		separatorWidth = 8
 	}
 	return summary + " " + faintStyle.Render(strings.Repeat("─", separatorWidth))
+}
+
+func spinnerTick() tea.Cmd {
+	return tea.Tick(spinnerTickRate, func(time.Time) tea.Msg {
+		return spinnerTickMsg{}
+	})
 }
 
 func searchLine(m pickerModel) string {
@@ -292,6 +322,37 @@ func (m *pickerModel) toggleCurrent() {
 		return
 	}
 	m.selected[current] = struct{}{}
+}
+
+func (m pickerModel) layout(content, footer string) string {
+	content = strings.TrimRight(content, "\n")
+	footer = strings.TrimRight(footer, "\n")
+
+	if m.height <= 0 {
+		if content == "" {
+			return footer
+		}
+		return content + "\n" + footer
+	}
+
+	contentLines := 0
+	if content != "" {
+		contentLines = strings.Count(content, "\n") + 1
+	}
+	footerLines := strings.Count(footer, "\n") + 1
+	spacerLines := m.height - contentLines - footerLines
+	if spacerLines < 1 {
+		spacerLines = 1
+	}
+
+	var builder strings.Builder
+	if content != "" {
+		builder.WriteString(content)
+		builder.WriteString("\n")
+	}
+	builder.WriteString(strings.Repeat("\n", spacerLines))
+	builder.WriteString(footer)
+	return builder.String()
 }
 
 func (m *pickerModel) rebuildCandidates() {
