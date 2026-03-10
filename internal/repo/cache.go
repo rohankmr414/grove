@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -47,6 +48,14 @@ func DiscoverCached(ctx context.Context, cacheRoot string) ([]RepoCandidate, err
 }
 
 func cachedCandidate(ctx context.Context, repoRoot, cacheRoot string) (RepoCandidate, error) {
+	hasCommits, err := repoHasCommits(ctx, repoRoot)
+	if err != nil {
+		return RepoCandidate{}, err
+	}
+	if !hasCommits {
+		return RepoCandidate{}, fmt.Errorf("repository has no commits")
+	}
+
 	candidate := RepoCandidate{
 		Name:      filepath.Base(repoRoot),
 		LocalPath: repoRoot,

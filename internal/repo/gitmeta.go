@@ -29,3 +29,10 @@ func defaultBranch(ctx context.Context, repoRoot string) (string, error) {
 	}
 	return util.Output(ctx, "git", "-C", repoRoot, "rev-parse", "--abbrev-ref", "HEAD")
 }
+
+func repoHasCommits(ctx context.Context, repoRoot string) (bool, error) {
+	if err := util.Run(ctx, "git", "-C", repoRoot, "rev-parse", "--verify", "HEAD"); err != nil {
+		return false, nil
+	}
+	return true, nil
+}

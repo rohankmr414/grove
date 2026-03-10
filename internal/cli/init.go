@@ -20,6 +20,11 @@ func runInit(args []string) error {
 		return err
 	}
 
+	manager := workspace.NewManager(cfg)
+	if err := manager.AssertDoesNotExist(args[0]); err != nil {
+		return err
+	}
+
 	candidates, err := repo.Discover(context.Background(), cfg)
 	if err != nil {
 		return err
@@ -36,6 +41,5 @@ func runInit(args []string) error {
 		return fmt.Errorf("no repositories selected")
 	}
 
-	manager := workspace.NewManager(cfg)
 	return manager.Init(context.Background(), args[0], selected)
 }

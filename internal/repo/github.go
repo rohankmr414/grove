@@ -20,6 +20,7 @@ type githubAPIRepo struct {
 	SSHURL        string `json:"ssh_url"`
 	DefaultBranch string `json:"default_branch"`
 	Private       bool   `json:"private"`
+	Size          int    `json:"size"`
 	UpdatedAt     string `json:"updated_at"`
 }
 
@@ -60,6 +61,9 @@ func DiscoverGitHub(ctx context.Context, cfg config.Config) ([]RepoCandidate, er
 
 	candidates := make([]RepoCandidate, 0, len(apiRepos))
 	for _, entry := range apiRepos {
+		if !githubRepoUsable(entry) {
+			continue
+		}
 		candidates = append(candidates, RepoCandidate{
 			Name:          entry.Name,
 			FullName:      entry.FullName,
@@ -74,6 +78,10 @@ func DiscoverGitHub(ctx context.Context, cfg config.Config) ([]RepoCandidate, er
 	}
 
 	return candidates, nil
+}
+
+func githubRepoUsable(entry githubAPIRepo) bool {
+	return entry.DefaultBranch != "" && entry.Size > 0
 }
 
 func githubToken(ctx context.Context) string {

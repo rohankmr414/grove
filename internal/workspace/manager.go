@@ -22,8 +22,26 @@ func NewManager(cfg config.Config) Manager {
 	return Manager{cfg: cfg}
 }
 
+func (m Manager) AssertDoesNotExist(name string) error {
+	workspacePath := filepath.Join(m.cfg.WorkspaceRoot, name)
+	if _, err := os.Stat(workspacePath); err == nil {
+		return fmt.Errorf("workspace %q already exists at %s; use `grove add` to modify it", name, workspacePath)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 func (m Manager) Init(ctx context.Context, name string, candidates []repo.RepoCandidate) error {
 	workspacePath := filepath.Join(m.cfg.WorkspaceRoot, name)
+	if err := m.AssertDoesNotExist(name); err != nil {
+		return err
+	}
+
+	fmt.Printf("Initializing workspace %q\n", name)
+	fmt.Printf("Workspace path: %s\n", workspacePath)
+	fmt.Printf("Repositories selected: %d\n\n", len(candidates))
+
 	if err := util.EnsureDir(workspacePath); err != nil {
 		return err
 	}
@@ -33,16 +51,31 @@ func (m Manager) Init(ctx context.Context, name string, candidates []repo.RepoCa
 		return err
 	}
 
-	return m.AddRepositories(ctx, ws, candidates)
+	if err := m.AddRepositories(ctx, ws, candidates); err != nil {
+		return err
+	}
+
+	fmt.Printf("\nWorkspace ready: %s\n", ws.Path)
+	return nil
 }
 
 func (m Manager) AddRepositories(ctx context.Context, ws Workspace, candidates []repo.RepoCandidate) error {
-	for _, candidate := range candidates {
+	for i, candidate := range candidates {
+		fmt.Printf("[%d/%d] %s\n", i+1, len(candidates), candidate.DisplayName())
+
+		canonicalPath := candidate.CachePath(m.cfg.RepoCacheRoot)
+		if _, err := os.Stat(canonicalPath); err == nil {
+			fmt.Printf("  using cached clone: %s\n", canonicalPath)
+		} else {
+			fmt.Printf("  cloning into cache: %s\n", canonicalPath)
+		}
+
 		canonicalPath, err := git.EnsureCanonicalClone(ctx, candidate, m.cfg.RepoCacheRoot)
 		if err != nil {
 			return fmt.Errorf("prepare clone for %s: %w", candidate.DisplayName(), err)
 		}
 
+		fmt.Printf("  fetching refs\n")
 		if err := git.Fetch(ctx, canonicalPath); err != nil {
 			return fmt.Errorf("fetch %s: %w", candidate.DisplayName(), err)
 		}
@@ -55,12 +88,15 @@ func (m Manager) AddRepositories(ctx context.Context, ws Workspace, candidates [
 		branch := workspaceBranch(ws.Name)
 		worktreePath := filepath.Join(ws.Path, candidate.Name)
 		if _, err := os.Stat(worktreePath); err == nil {
+			fmt.Printf("  worktree already exists: %s\n\n", worktreePath)
 			continue
 		}
 
+		fmt.Printf("  creating worktree: %s (%s)\n", worktreePath, branch)
 		if err := git.AddWorktree(ctx, canonicalPath, worktreePath, branch, defaultBranch); err != nil {
 			return fmt.Errorf("create worktree for %s: %w", candidate.DisplayName(), err)
 		}
+		fmt.Printf("  done\n\n")
 	}
 	return nil
 }
