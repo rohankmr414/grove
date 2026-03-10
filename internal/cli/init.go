@@ -25,15 +25,12 @@ func runInit(args []string) error {
 		return err
 	}
 
-	candidates, err := repo.Discover(context.Background(), cfg)
+	source, err := repo.NewSource(context.Background(), cfg)
 	if err != nil {
 		return err
 	}
-	if len(candidates) == 0 {
-		return fmt.Errorf("no repositories discovered; ensure ~/.grove/repos has cached clones or authenticate GitHub via gh/GITHUB_TOKEN")
-	}
 
-	selected, err := ui.PickRepositories(candidates)
+	selected, err := ui.PickRepositories(source.Initial, source.Search)
 	if err != nil {
 		return err
 	}

@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,18 +15,36 @@ import (
 )
 
 const maxVisibleResults = 12
+const searchDebounce = 250 * time.Millisecond
 
 type pickerModel struct {
 	input      textinput.Model
 	candidates []repo.RepoCandidate
-	displays   []string
+	base       []repo.RepoCandidate
+	remote     []repo.RepoCandidate
 	matches    []int
 	cursor     int
 	width      int
 	height     int
 	selected   map[int]struct{}
+	search     repo.SearchFunc
+	searchSeq  int
+	lastQuery  string
+	lastErr    string
 	cancelled  bool
 	confirmed  bool
+}
+
+type searchTickMsg struct {
+	seq   int
+	query string
+}
+
+type searchResultsMsg struct {
+	seq        int
+	query      string
+	candidates []repo.RepoCandidate
+	err        error
 }
 
 var (
@@ -37,12 +57,12 @@ var (
 			Foreground(lipgloss.Color("255"))
 )
 
-func PickRepositories(candidates []repo.RepoCandidate) ([]repo.RepoCandidate, error) {
-	if len(candidates) == 0 {
+func PickRepositories(candidates []repo.RepoCandidate, search repo.SearchFunc) ([]repo.RepoCandidate, error) {
+	if len(candidates) == 0 && search == nil {
 		return nil, nil
 	}
 
-	model := newPickerModel(candidates)
+	model := newPickerModel(candidates, search)
 	result, err := tea.NewProgram(model, tea.WithAltScreen()).Run()
 	if err != nil {
 		return nil, err
@@ -62,23 +82,19 @@ func PickRepositories(candidates []repo.RepoCandidate) ([]repo.RepoCandidate, er
 	return collectSelected(finalModel.candidates, finalModel.selected), nil
 }
 
-func newPickerModel(candidates []repo.RepoCandidate) pickerModel {
+func newPickerModel(candidates []repo.RepoCandidate, search repo.SearchFunc) pickerModel {
 	input := textinput.New()
 	input.Prompt = promptStyle.Render("> ")
 	input.Placeholder = ""
 	input.Focus()
 	input.CharLimit = 256
 
-	displays := make([]string, 0, len(candidates))
-	for _, candidate := range candidates {
-		displays = append(displays, candidate.DisplayName())
-	}
-
 	model := pickerModel{
 		input:      input,
+		base:       candidates,
 		candidates: candidates,
-		displays:   displays,
 		selected:   make(map[int]struct{}),
+		search:     search,
 	}
 	model.refreshMatches()
 	return model
@@ -93,6 +109,25 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		return m, nil
+	case searchTickMsg:
+		if msg.seq != m.searchSeq || m.search == nil || strings.TrimSpace(msg.query) == "" {
+			return m, nil
+		}
+		return m, m.runSearch(msg.query, msg.seq)
+	case searchResultsMsg:
+		if msg.seq != m.searchSeq {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.lastErr = msg.err.Error()
+			m.remote = nil
+		} else {
+			m.lastErr = ""
+			m.remote = msg.candidates
+		}
+		m.rebuildCandidates()
+		m.refreshMatches()
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -125,7 +160,17 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
+	previous := m.input.Value()
 	m.input, cmd = m.input.Update(msg)
+	if previous != m.input.Value() {
+		if len(strings.TrimSpace(m.input.Value())) < 2 {
+			m.remote = nil
+			m.lastErr = ""
+		}
+		m.rebuildCandidates()
+		m.refreshMatches()
+		return m, tea.Batch(cmd, m.scheduleSearchCmd())
+	}
 	m.refreshMatches()
 	return m, cmd
 }
@@ -135,6 +180,10 @@ func (m pickerModel) View() string {
 
 	if len(m.matches) == 0 {
 		builder.WriteString(faintStyle.Render("  no matches"))
+		if m.lastErr != "" {
+			builder.WriteString("\n")
+			builder.WriteString(faintStyle.Render("  github search unavailable"))
+		}
 		builder.WriteString("\n")
 		builder.WriteString(statusLine(m))
 		builder.WriteString("\n")
@@ -210,7 +259,11 @@ func (m *pickerModel) refreshMatches() {
 			m.matches = append(m.matches, index)
 		}
 	} else {
-		results := fuzzy.Find(query, m.displays)
+		displays := make([]string, 0, len(m.candidates))
+		for _, candidate := range m.candidates {
+			displays = append(displays, candidate.DisplayName())
+		}
+		results := fuzzy.Find(query, displays)
 		for _, result := range results {
 			m.matches = append(m.matches, result.Index)
 		}
@@ -239,6 +292,34 @@ func (m *pickerModel) toggleCurrent() {
 		return
 	}
 	m.selected[current] = struct{}{}
+}
+
+func (m *pickerModel) rebuildCandidates() {
+	m.candidates = dedupeCandidates(append(append([]repo.RepoCandidate{}, m.base...), m.remote...))
+}
+
+func (m *pickerModel) scheduleSearchCmd() tea.Cmd {
+	query := strings.TrimSpace(m.input.Value())
+	m.searchSeq++
+	seq := m.searchSeq
+	if m.search == nil || len(query) < 2 {
+		return nil
+	}
+	return tea.Tick(searchDebounce, func(time.Time) tea.Msg {
+		return searchTickMsg{seq: seq, query: query}
+	})
+}
+
+func (m pickerModel) runSearch(query string, seq int) tea.Cmd {
+	return func() tea.Msg {
+		candidates, err := m.search(context.Background(), query)
+		return searchResultsMsg{
+			seq:        seq,
+			query:      query,
+			candidates: candidates,
+			err:        err,
+		}
+	}
 }
 
 func (m pickerModel) visibleRows() int {
@@ -273,6 +354,30 @@ func collectSelected(candidates []repo.RepoCandidate, selected map[int]struct{})
 	result := make([]repo.RepoCandidate, 0, len(indexes))
 	for _, index := range indexes {
 		result = append(result, candidates[index])
+	}
+	return result
+}
+
+func dedupeCandidates(input []repo.RepoCandidate) []repo.RepoCandidate {
+	seen := make(map[string]repo.RepoCandidate, len(input))
+	order := make([]string, 0, len(input))
+	for _, candidate := range input {
+		key := candidate.FullName
+		if key == "" {
+			key = candidate.CloneURL
+		}
+		if key == "" {
+			key = candidate.LocalPath
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = candidate
+		order = append(order, key)
+	}
+	result := make([]repo.RepoCandidate, 0, len(order))
+	for _, key := range order {
+		result = append(result, seen[key])
 	}
 	return result
 }
