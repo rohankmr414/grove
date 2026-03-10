@@ -34,14 +34,31 @@ func DiscoverGitHub(ctx context.Context, cfg config.Config) ([]RepoCandidate, er
 		return loadCachedGitHubCandidates()
 	}
 
+	cached, cacheErr := loadCachedGitHubCandidates()
+	if cacheErr == nil && len(cached) > 0 {
+		go refreshGitHubCache(context.Background(), cfg, token)
+		return cached, nil
+	}
+
+	candidates, err := fetchGitHubCandidates(ctx, cfg, token)
+	if err != nil {
+		if cacheErr == nil {
+			return cached, nil
+		}
+		return nil, err
+	}
+	return candidates, nil
+}
+
+func refreshGitHubCache(ctx context.Context, cfg config.Config, token string) {
+	_, _ = fetchGitHubCandidates(ctx, cfg, token)
+}
+
+func fetchGitHubCandidates(ctx context.Context, cfg config.Config, token string) ([]RepoCandidate, error) {
 	var apiRepos []githubAPIRepo
 	if len(cfg.GitHub.Orgs) == 0 {
 		repos, err := fetchUserRepos(ctx, token)
 		if err != nil {
-			cached, cacheErr := loadGitHubCache()
-			if cacheErr == nil {
-				return cached, nil
-			}
 			return nil, err
 		}
 		apiRepos = append(apiRepos, repos...)
@@ -49,10 +66,6 @@ func DiscoverGitHub(ctx context.Context, cfg config.Config) ([]RepoCandidate, er
 		for _, org := range cfg.GitHub.Orgs {
 			repos, err := fetchOrgRepos(ctx, token, org)
 			if err != nil {
-				cached, cacheErr := loadGitHubCache()
-				if cacheErr == nil {
-					return cached, nil
-				}
 				return nil, err
 			}
 			apiRepos = append(apiRepos, repos...)
@@ -72,11 +85,9 @@ func DiscoverGitHub(ctx context.Context, cfg config.Config) ([]RepoCandidate, er
 			Source:        "github",
 		})
 	}
-
 	if err := saveGitHubCache(candidates); err != nil {
 		return nil, err
 	}
-
 	return dedupe(candidates), nil
 }
 

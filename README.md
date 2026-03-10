@@ -124,6 +124,8 @@ Auth priority:
 
 If neither is available, GitHub discovery is skipped and `grove` falls back to cached repository metadata and cached canonical clones.
 
+GitHub repo metadata is cached at `~/.grove/cache/repos.json`. `grove` uses that cache immediately when it exists and refreshes it in the background during `init` and `add`, which keeps repeated commands fast without blocking on GitHub every time.
+
 ## Usage
 
 Initialize a workspace:
