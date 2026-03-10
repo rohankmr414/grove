@@ -18,10 +18,6 @@ func SetBuildInfo(version, commit, date string) {
 }
 
 func runVersion(args []string) error {
-	if len(args) != 0 {
-		return fmt.Errorf("usage: grove version")
-	}
-
 	fmt.Printf("grove %s\n", buildVersion)
 	fmt.Printf("commit: %s\n", buildCommit)
 	fmt.Printf("built:  %s\n", buildDate)

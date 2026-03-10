@@ -8,10 +8,6 @@ import (
 )
 
 func runPath(args []string) error {
-	if len(args) > 1 {
-		return fmt.Errorf("usage: grove path [workspace]")
-	}
-
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -32,10 +28,6 @@ func runHiddenPath(args []string) error {
 }
 
 func runListWorkspaces(args []string) error {
-	if len(args) != 0 {
-		return fmt.Errorf("usage: grove __workspaces")
-	}
-
 	cfg, err := config.Load()
 	if err != nil {
 		return err

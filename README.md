@@ -165,6 +165,13 @@ Print a workspace path:
 ./grove path auth-feature
 ```
 
+Show command help:
+
+```bash
+./grove help init
+./grove --help
+```
+
 ## Shell Integration
 
 `grove cd` and auto-jumping after `grove init` require shell integration because a subprocess cannot change the parent shell's working directory.

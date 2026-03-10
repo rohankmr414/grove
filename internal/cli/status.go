@@ -9,10 +9,6 @@ import (
 )
 
 func runStatus(args []string) error {
-	if len(args) > 1 {
-		return fmt.Errorf("usage: grove status [workspace]")
-	}
-
 	cfg, err := config.Load()
 	if err != nil {
 		return err

@@ -11,10 +11,6 @@ import (
 )
 
 func runInit(args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: grove init <workspace>")
-	}
-
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -38,7 +34,7 @@ func runInit(args []string) error {
 		return err
 	}
 	if len(selected) == 0 {
-		return fmt.Errorf("no repositories selected")
+		return &usageError{text: "no repositories selected"}
 	}
 
 	return manager.Init(context.Background(), args[0], selected)

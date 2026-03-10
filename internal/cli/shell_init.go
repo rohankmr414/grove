@@ -7,9 +7,6 @@ import (
 
 func runShellInit(args []string) error {
 	shell := "zsh"
-	if len(args) > 1 {
-		return fmt.Errorf("usage: grove shell-init [zsh|bash]")
-	}
 	if len(args) == 1 {
 		shell = args[0]
 	}
@@ -55,7 +52,7 @@ func zshShellInitScript() string {
 		"}",
 		"_grove_complete() {",
 		"  if (( CURRENT == 2 )); then",
-		"    _arguments '1:command:(init add cd path status remove shell-init help)'",
+		"    _arguments '1:command:(init add cd path status remove version shell-init help)'",
 		"    return",
 		"  fi",
 		"  if [[ ${words[2]} == cd ]]; then",
@@ -95,7 +92,7 @@ func bashShellInitScript() string {
 		"  cur=\"${COMP_WORDS[COMP_CWORD]}\"",
 		"  prev=\"${COMP_WORDS[COMP_CWORD-1]}\"",
 		"  if [ ${COMP_CWORD} -eq 1 ]; then",
-		"    COMPREPLY=( $(compgen -W 'init add cd path status remove shell-init help' -- \"$cur\") )",
+		"    COMPREPLY=( $(compgen -W 'init add cd path status remove version shell-init help' -- \"$cur\") )",
 		"    return 0",
 		"  fi",
 		"  if [ \"$prev\" = \"cd\" ]; then",
