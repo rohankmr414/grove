@@ -22,6 +22,10 @@ func (c RepoCandidate) DisplayName() string {
 		if c.FullName != "" {
 			return "[gh] " + c.FullName
 		}
+	case "workspace":
+		if c.Name != "" {
+			return c.Name
+		}
 	}
 	if c.FullName != "" {
 		return "[" + c.Source + "] " + c.FullName

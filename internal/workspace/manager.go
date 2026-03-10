@@ -28,7 +28,7 @@ func NewManager(cfg config.Config) Manager {
 func (m Manager) AssertDoesNotExist(name string) error {
 	workspacePath := filepath.Join(m.cfg.WorkspaceRoot, name)
 	if _, err := os.Stat(workspacePath); err == nil {
-		return fmt.Errorf("workspace %q already exists at %s; use `grove add` to modify it", name, workspacePath)
+		return fmt.Errorf("workspace %q already exists at %s; use `grove repo add` to modify it", name, workspacePath)
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -276,19 +276,65 @@ func (m Manager) Remove(ctx context.Context, name string) error {
 		return err
 	}
 
-	entries, err := os.ReadDir(ws.Path)
+	repositories, err := m.WorkspaceRepositories(ws)
 	if err != nil {
 		return err
 	}
 
+	names := make([]string, 0, len(repositories))
+	for _, repository := range repositories {
+		names = append(names, repository.Name)
+	}
+
+	if err := m.RemoveRepositories(ctx, ws, names...); err != nil {
+		return err
+	}
+
+	return os.RemoveAll(ws.Path)
+}
+
+func (m Manager) WorkspaceRepositories(ws Workspace) ([]repo.RepoCandidate, error) {
+	entries, err := os.ReadDir(ws.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	repositories := make([]repo.RepoCandidate, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
+
 		repoPath := filepath.Join(ws.Path, entry.Name())
 		if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
 			continue
 		}
+
+		repositories = append(repositories, repo.RepoCandidate{
+			Name:      entry.Name(),
+			FullName:  entry.Name(),
+			LocalPath: repoPath,
+			Source:    "workspace",
+		})
+	}
+
+	sort.Slice(repositories, func(i, j int) bool {
+		return repositories[i].Name < repositories[j].Name
+	})
+
+	return repositories, nil
+}
+
+func (m Manager) RemoveRepositories(ctx context.Context, ws Workspace, names ...string) error {
+	for _, name := range names {
+		repoPath := filepath.Join(ws.Path, name)
+		if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+
 		canonical, err := git.CanonicalRoot(ctx, repoPath)
 		if err != nil {
 			return err
@@ -298,7 +344,7 @@ func (m Manager) Remove(ctx context.Context, name string) error {
 		}
 	}
 
-	return os.RemoveAll(ws.Path)
+	return nil
 }
 
 func (m Manager) List() ([]Workspace, error) {

@@ -56,3 +56,18 @@ func TestExecuteCommandHelp(t *testing.T) {
 		t.Fatalf("expected init help, got %q", stdout.String())
 	}
 }
+
+func TestExecuteRepoSubcommandHelp(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	err := ExecuteForTest([]string{"help", "repo"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !strings.Contains(stdout.String(), "grove repo") {
+		t.Fatalf("expected repo help, got %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "add") || !strings.Contains(stdout.String(), "remove") {
+		t.Fatalf("expected repo subcommands in help, got %q", stdout.String())
+	}
+}

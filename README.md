@@ -26,6 +26,7 @@ Example:
 
 - initialize a workspace from multiple repositories
 - add repositories to an existing workspace
+- remove repositories from an existing workspace
 - inspect branch and dirty state across all repos in a workspace
 - list known workspaces
 - remove workspace worktrees without deleting canonical clones
@@ -125,7 +126,7 @@ Auth priority:
 
 If neither is available, GitHub discovery is skipped and `grove` falls back to cached repository metadata and cached canonical clones.
 
-GitHub repo metadata is cached at `~/.grove/cache/repos.json`. `grove` uses that cache immediately when it exists and refreshes it in the background during `init` and `add`, which keeps repeated commands fast without blocking on GitHub every time.
+GitHub repo metadata is cached at `~/.grove/cache/repos.json`. `grove` uses that cache immediately when it exists and refreshes it in the background during `init` and `repo add`, which keeps repeated commands fast without blocking on GitHub every time.
 
 ## Usage
 
@@ -139,7 +140,14 @@ Add repositories to the current workspace:
 
 ```bash
 cd ~/groves/auth-feature
-./grove add
+./grove repo add
+```
+
+Remove repositories from the current workspace:
+
+```bash
+cd ~/groves/auth-feature
+./grove repo remove
 ```
 
 Show workspace status:

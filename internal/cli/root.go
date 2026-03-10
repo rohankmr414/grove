@@ -37,6 +37,30 @@ func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 
+	repoCommand := &cobra.Command{
+		Use:   "repo",
+		Short: "Manage repositories in the current workspace",
+		Long:  "Add or remove repositories in the current workspace.",
+	}
+	repoCommand.AddCommand(
+		newCommand(
+			"add",
+			"Add repositories to the current workspace",
+			"Discovers repositories and adds the selected ones to the workspace for the current directory.",
+			nil,
+			cobra.NoArgs,
+			runAdd,
+		),
+		newCommand(
+			"remove",
+			"Remove repositories from the current workspace",
+			"Shows repositories already present in the current workspace and removes the selected worktrees.",
+			[]string{"rm"},
+			cobra.NoArgs,
+			runRemoveRepo,
+		),
+	)
+
 	root.AddCommand(
 		newCommand(
 			"init <workspace>",
@@ -46,14 +70,7 @@ func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
 			cobra.ExactArgs(1),
 			runInit,
 		),
-		newCommand(
-			"add",
-			"Add repositories to the current workspace",
-			"Discovers repositories and adds the selected ones to the workspace for the current directory.",
-			nil,
-			cobra.NoArgs,
-			runAdd,
-		),
+		repoCommand,
 		newCommand(
 			"cd <workspace>",
 			"Change into a workspace via shell integration",
