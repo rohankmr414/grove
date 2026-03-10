@@ -20,6 +20,8 @@ func Execute(args []string) error {
 		return runStatus(args[1:])
 	case "remove":
 		return runRemove(args[1:])
+	case "version":
+		return runVersion(args[1:])
 	case "shell-init":
 		return runShellInit(args[1:])
 	case "__path":
@@ -47,5 +49,6 @@ Usage:
   grove path [workspace]
   grove status [workspace]
   grove remove <workspace>
+  grove version
   grove shell-init [zsh|bash]`
 }
