@@ -34,7 +34,7 @@ func runInit(args []string) error {
 		return err
 	}
 	if len(selected) == 0 {
-		return &usageError{text: "no repositories selected"}
+		return fmt.Errorf("no repositories selected")
 	}
 
 	return manager.Init(context.Background(), args[0], selected)

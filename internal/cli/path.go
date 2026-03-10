@@ -27,24 +27,6 @@ func runHiddenPath(args []string) error {
 	return runPath(args)
 }
 
-func runListWorkspaces(args []string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
-	manager := workspace.NewManager(cfg)
-	workspaces, err := manager.List()
-	if err != nil {
-		return err
-	}
-
-	for _, ws := range workspaces {
-		fmt.Println(ws.Name)
-	}
-	return nil
-}
-
 func runCD(args []string) error {
 	return fmt.Errorf("`grove cd` requires shell integration; add `eval \"$(grove shell-init %s)\"` to your shell config", detectShell())
 }

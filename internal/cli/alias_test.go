@@ -1,20 +1,25 @@
 package cli
 
-import "testing"
+import (
+	"bytes"
+	"strings"
+	"testing"
+)
 
-func TestFindCommandAlias(t *testing.T) {
+func TestExecuteAliasHelp(t *testing.T) {
 	tests := map[string]string{
-		"ls": "list",
-		"rm": "remove",
+		"ls": "grove list",
+		"rm": "grove remove <workspace>",
 	}
 
 	for alias, expected := range tests {
-		cmd, ok := findCommand(alias)
-		if !ok {
-			t.Fatalf("expected alias %q to resolve", alias)
+		var stdout, stderr bytes.Buffer
+		err := ExecuteForTest([]string{alias, "--help"}, &stdout, &stderr)
+		if err != nil {
+			t.Fatalf("alias %q returned error: %v", alias, err)
 		}
-		if cmd.Name != expected {
-			t.Fatalf("alias %q resolved to %q, want %q", alias, cmd.Name, expected)
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("alias %q help missing %q in %q", alias, expected, stdout.String())
 		}
 	}
 }

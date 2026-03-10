@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/rohankmr414/grove/internal/config"
 	"github.com/rohankmr414/grove/internal/repo"
@@ -31,7 +32,7 @@ func runAdd(args []string) error {
 		return err
 	}
 	if len(selected) == 0 {
-		return &usageError{text: "no repositories selected"}
+		return fmt.Errorf("no repositories selected")
 	}
 
 	return manager.AddRepositories(context.Background(), ws, selected)

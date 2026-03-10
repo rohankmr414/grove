@@ -1,30 +1,32 @@
 package cli
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
 
 func TestExecuteRootHelpFlag(t *testing.T) {
-	err := Execute([]string{"--help"})
-	if err == nil {
-		t.Fatal("expected help output")
+	var stdout, stderr bytes.Buffer
+
+	err := ExecuteForTest([]string{"--help"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
-	if code := ExitCode(err); code != 0 {
-		t.Fatalf("expected help exit code 0, got %d", code)
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr, got %q", stderr.String())
 	}
-	if !strings.Contains(err.Error(), "grove <command> [flags]") {
-		t.Fatalf("expected root usage, got %q", err.Error())
+	if !strings.Contains(stdout.String(), "grove [command]") {
+		t.Fatalf("expected root usage, got %q", stdout.String())
 	}
 }
 
 func TestExecuteUnknownCommand(t *testing.T) {
-	err := Execute([]string{"wat"})
+	var stdout, stderr bytes.Buffer
+
+	err := ExecuteForTest([]string{"wat"}, &stdout, &stderr)
 	if err == nil {
-		t.Fatal("expected usage error")
-	}
-	if code := ExitCode(err); code != 2 {
-		t.Fatalf("expected usage exit code 2, got %d", code)
+		t.Fatal("expected error")
 	}
 	if !strings.Contains(err.Error(), `unknown command "wat"`) {
 		t.Fatalf("expected unknown command message, got %q", err.Error())
@@ -32,30 +34,25 @@ func TestExecuteUnknownCommand(t *testing.T) {
 }
 
 func TestExecuteSubcommandUnexpectedArgs(t *testing.T) {
-	err := Execute([]string{"version", "extra"})
+	var stdout, stderr bytes.Buffer
+
+	err := ExecuteForTest([]string{"version", "extra"}, &stdout, &stderr)
 	if err == nil {
-		t.Fatal("expected usage error")
+		t.Fatal("expected error")
 	}
-	if code := ExitCode(err); code != 2 {
-		t.Fatalf("expected usage exit code 2, got %d", code)
-	}
-	if !strings.Contains(err.Error(), `unexpected arguments: "extra"`) {
-		t.Fatalf("expected unexpected arguments message, got %q", err.Error())
-	}
-	if !strings.Contains(err.Error(), "Usage:\n  grove version") {
-		t.Fatalf("expected command usage, got %q", err.Error())
+	if !strings.Contains(err.Error(), `unknown command "extra" for "grove version"`) {
+		t.Fatalf("expected cobra unknown-command error, got %q", err.Error())
 	}
 }
 
 func TestExecuteCommandHelp(t *testing.T) {
-	err := Execute([]string{"help", "init"})
-	if err == nil {
-		t.Fatal("expected help output")
+	var stdout, stderr bytes.Buffer
+
+	err := ExecuteForTest([]string{"help", "init"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
-	if code := ExitCode(err); code != 0 {
-		t.Fatalf("expected help exit code 0, got %d", code)
-	}
-	if !strings.Contains(err.Error(), "Usage:\n  grove init <workspace>") {
-		t.Fatalf("expected init help, got %q", err.Error())
+	if !strings.Contains(stdout.String(), "grove init <workspace>") {
+		t.Fatalf("expected init help, got %q", stdout.String())
 	}
 }

@@ -201,10 +201,11 @@ With shell integration enabled, this will also drop you into the workspace after
 grove init auth-feature
 ```
 
-The generated shell integration also adds completion for:
+The generated shell integration also loads Cobra-generated shell completion. You can also install completion directly:
 
 ```bash
-grove cd <TAB>
+./grove completion zsh
+./grove completion bash
 ```
 
 To enable it permanently in `zsh`, add this to `~/.zshrc`:

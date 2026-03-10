@@ -118,7 +118,7 @@ shell_name="${SHELL##*/}"
 
 echo "Installed $BINARY_PATH"
 echo
-echo "Shell integration:"
+echo "Shell integration and completion:"
 case "$shell_name" in
   zsh|bash)
     echo "  Current shell:"
@@ -133,3 +133,7 @@ case "$shell_name" in
     echo "    eval \"\$($BINARY_PATH shell-init bash)\""
     ;;
 esac
+echo
+echo "Raw completion script:"
+echo "  $BINARY_PATH completion zsh"
+echo "  $BINARY_PATH completion bash"
