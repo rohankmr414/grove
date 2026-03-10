@@ -30,6 +30,13 @@ Example:
 - remove workspace worktrees without deleting canonical clones
 - navigate to a workspace with shell integration via `grove cd`
 
+## Prerequisites
+
+- Go 1.25+ to build the binary
+- Git installed and available on `PATH`
+- GitHub authentication via `gh auth login` or `GITHUB_TOKEN` for GitHub repo discovery
+- `fzf` on `PATH` for multi-select fuzzy picking; without it, `grove` falls back to a plain numeric prompt
+
 ## Build
 
 Standard build:
