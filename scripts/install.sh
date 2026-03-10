@@ -54,6 +54,20 @@ fetch() {
   $FETCH "$1"
 }
 
+installed_version() {
+  if [ ! -x "$BINARY_PATH" ]; then
+    return 1
+  fi
+
+  version_output="$("$BINARY_PATH" version 2>/dev/null || true)"
+  version_line="$(printf '%s\n' "$version_output" | sed -n '1s/^grove[[:space:]]\+//p')"
+  if [ -z "$version_line" ]; then
+    return 1
+  fi
+
+  printf '%s\n' "$version_line"
+}
+
 resolve_version() {
   if [ "$VERSION" != "latest" ]; then
     printf '%s\n' "${VERSION#v}"
@@ -73,10 +87,20 @@ version="$(resolve_version)"
 archive="${BINARY_NAME}_${version}_${os}_${arch}.tar.gz"
 url="https://github.com/$OWNER_REPO/releases/download/v${version}/${archive}"
 
+current_version="$(installed_version || true)"
+if [ -n "$current_version" ]; then
+  if [ "$current_version" = "$version" ]; then
+    echo "$BINARY_NAME $version is already installed at $BINARY_PATH"
+    exit 0
+  fi
+  echo "Upgrading $BINARY_NAME from $current_version to $version"
+else
+  echo "Installing $BINARY_NAME $version to $INSTALL_DIR"
+fi
+
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT INT TERM
 
-echo "Installing $BINARY_NAME ${version} to $INSTALL_DIR"
 echo "Downloading $url"
 fetch "$url" >"$tmpdir/$archive"
 

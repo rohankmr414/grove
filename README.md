@@ -64,6 +64,12 @@ Install a specific version:
 curl -fsSL https://raw.githubusercontent.com/rohankmr414/grove/main/scripts/install.sh | sh -s -- v0.1.0
 ```
 
+Upgrade an existing installation to the latest release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rohankmr414/grove/main/scripts/install.sh | sh
+```
+
 By default the script installs to `~/.local/bin`. Override that with `INSTALL_DIR`:
 
 ```bash
@@ -75,7 +81,13 @@ Current install script targets:
 - macOS: `amd64`, `arm64`
 - Linux: `amd64`, `arm64`
 
-After install, the script prints shell integration commands so `grove cd` and auto-entering a workspace after `grove init` work immediately.
+Upgrade behavior:
+
+- if the requested version is already installed at the target path, the script exits without replacing the binary
+- if a different version is installed at the target path, the script replaces it in place
+- if no compatible existing `grove version` output is available, the script proceeds with installation
+
+After install or upgrade, the script prints shell integration commands so `grove cd` and auto-entering a workspace after `grove init` work immediately.
 
 ## Configuration
 
