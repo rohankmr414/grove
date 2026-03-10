@@ -11,6 +11,7 @@ import (
 
 type command struct {
 	Name        string
+	Aliases     []string
 	Usage       string
 	Short       string
 	Hidden      bool
@@ -100,6 +101,12 @@ func (c command) helpText() string {
 		builder.WriteString(c.Description)
 		builder.WriteString("\n")
 	}
+	if len(c.Aliases) > 0 {
+		builder.WriteString("\nAliases:\n")
+		builder.WriteString("  ")
+		builder.WriteString(strings.Join(c.Aliases, ", "))
+		builder.WriteString("\n")
+	}
 
 	builder.WriteString("\nFlags:\n")
 	builder.WriteString("  -h, --help   Show help\n")
@@ -152,7 +159,11 @@ func renderRootHelp() string {
 	builder.WriteString("Commands:\n")
 
 	for _, cmd := range visibleCommands() {
-		builder.WriteString(fmt.Sprintf("  %-12s %s\n", cmd.Name, cmd.Short))
+		name := cmd.Name
+		if len(cmd.Aliases) > 0 {
+			name = fmt.Sprintf("%s (%s)", cmd.Name, strings.Join(cmd.Aliases, ", "))
+		}
+		builder.WriteString(fmt.Sprintf("  %-18s %s\n", name, cmd.Short))
 	}
 
 	builder.WriteString("\nUse \"grove help <command>\" for more information about a command.\n")
@@ -173,7 +184,7 @@ func visibleCommands() []command {
 func findCommand(name string) (command, bool) {
 	commands := allCommands()
 	index := slices.IndexFunc(commands, func(cmd command) bool {
-		return cmd.Name == name
+		return cmd.Name == name || slices.Contains(cmd.Aliases, name)
 	})
 	if index == -1 {
 		return command{}, false

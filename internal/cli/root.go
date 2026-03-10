@@ -35,6 +35,7 @@ func allCommands() []command {
 		},
 		{
 			Name:        "list",
+			Aliases:     []string{"ls"},
 			Usage:       "grove list",
 			Short:       "List grove workspaces",
 			MinArgs:     0,
@@ -64,6 +65,7 @@ func allCommands() []command {
 		},
 		{
 			Name:        "remove",
+			Aliases:     []string{"rm"},
 			Usage:       "grove remove <workspace>",
 			Short:       "Remove a workspace and its worktrees",
 			MinArgs:     1,
