@@ -50,6 +50,33 @@ If your environment restricts the default Go cache location:
 GOCACHE=/tmp/grove-gocache CGO_ENABLED=0 go build -o grove ./cmd/grove
 ```
 
+## Install
+
+Install the latest release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rohankmr414/grove/main/scripts/install.sh | sh
+```
+
+Install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rohankmr414/grove/main/scripts/install.sh | sh -s -- v0.1.0
+```
+
+By default the script installs to `~/.local/bin`. Override that with `INSTALL_DIR`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rohankmr414/grove/main/scripts/install.sh | INSTALL_DIR=/usr/local/bin sh
+```
+
+Current install script targets:
+
+- macOS: `amd64`, `arm64`
+- Linux: `amd64`, `arm64`
+
+After install, the script prints shell integration commands so `grove cd` and auto-entering a workspace after `grove init` work immediately.
+
 ## Configuration
 
 Config file:
