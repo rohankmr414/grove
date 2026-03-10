@@ -27,6 +27,7 @@ Example:
 - initialize a workspace from multiple repositories
 - add repositories to an existing workspace
 - inspect branch and dirty state across all repos in a workspace
+- list known workspaces
 - remove workspace worktrees without deleting canonical clones
 - navigate to a workspace with shell integration via `grove cd`
 
@@ -163,6 +164,12 @@ Print a workspace path:
 
 ```bash
 ./grove path auth-feature
+```
+
+List workspaces:
+
+```bash
+./grove list
 ```
 
 Show command help:

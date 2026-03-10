@@ -34,6 +34,15 @@ func allCommands() []command {
 			Run:         runCD,
 		},
 		{
+			Name:        "list",
+			Usage:       "grove list",
+			Short:       "List grove workspaces",
+			MinArgs:     0,
+			MaxArgs:     0,
+			Description: "Prints the names of all known grove workspaces.",
+			Run:         runList,
+		},
+		{
 			Name:        "path",
 			Usage:       "grove path [workspace]",
 			Short:       "Print the filesystem path for a workspace",
