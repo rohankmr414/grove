@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,6 +21,7 @@ type pickerModel struct {
 	matches    []int
 	cursor     int
 	width      int
+	height     int
 	selected   map[int]struct{}
 	cancelled  bool
 	confirmed  bool
@@ -51,6 +53,7 @@ func PickRepositories(candidates []repo.RepoCandidate) ([]repo.RepoCandidate, er
 	if !ok {
 		return nil, fmt.Errorf("unexpected picker model type %T", result)
 	}
+	clearRenderedPicker(finalModel.View())
 	if finalModel.cancelled {
 		return nil, nil
 	}
@@ -86,6 +89,7 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		m.height = msg.Height
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -173,11 +177,13 @@ func (m pickerModel) View() string {
 			lineStyle = activeStyle.Bold(true)
 		}
 
-		builder.WriteString(fmt.Sprintf("%s %s\n", gutter, lineStyle.Render(m.candidates[matchIndex].DisplayName())))
+		row := fmt.Sprintf("%s %s", gutter, m.candidates[matchIndex].DisplayName())
+		builder.WriteString(lineStyle.Render(truncateToWidth(row, m.width)))
+		builder.WriteString("\n")
 	}
 
 	if len(m.matches) > end {
-		builder.WriteString(faintStyle.Render(fmt.Sprintf("... %d more", len(m.matches)-end)))
+		builder.WriteString(faintStyle.Render(truncateToWidth(fmt.Sprintf("... %d more", len(m.matches)-end), m.width)))
 		builder.WriteString("\n")
 	}
 
@@ -196,7 +202,7 @@ func statusLine(m pickerModel) string {
 	if separatorWidth < 8 {
 		separatorWidth = 8
 	}
-	return summary + " " + faintStyle.Render(strings.Repeat("─", separatorWidth))
+	return truncateToWidth(summary+" "+faintStyle.Render(strings.Repeat("─", separatorWidth)), m.width)
 }
 
 func searchLine(m pickerModel) string {
@@ -248,6 +254,15 @@ func (m *pickerModel) toggleCurrent() {
 }
 
 func (m pickerModel) visibleRows() int {
+	if m.height > 0 {
+		available := m.height - 3
+		if available < 1 {
+			return 1
+		}
+		if available < maxVisibleResults && available < len(m.matches) {
+			return available
+		}
+	}
 	if len(m.matches) < maxVisibleResults {
 		return len(m.matches)
 	}
@@ -266,4 +281,48 @@ func collectSelected(candidates []repo.RepoCandidate, selected map[int]struct{})
 		result = append(result, candidates[index])
 	}
 	return result
+}
+
+func clearRenderedPicker(view string) {
+	lines := strings.Count(strings.TrimRight(view, "\n"), "\n") + 1
+	if strings.TrimSpace(view) == "" {
+		return
+	}
+
+	for i := 0; i < lines; i++ {
+		fmt.Print("\r\033[2K")
+		if i < lines-1 {
+			fmt.Print("\033[1A")
+		}
+	}
+	fmt.Print("\r")
+}
+
+func truncateToWidth(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	if lipgloss.Width(s) <= width {
+		return s
+	}
+	if width <= 1 {
+		return "…"
+	}
+
+	var builder strings.Builder
+	current := 0
+	for len(s) > 0 {
+		r, size := utf8.DecodeRuneInString(s)
+		if r == utf8.RuneError && size == 1 {
+			break
+		}
+		if current+1 >= width {
+			break
+		}
+		builder.WriteRune(r)
+		current++
+		s = s[size:]
+	}
+	builder.WriteRune('…')
+	return builder.String()
 }
