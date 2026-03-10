@@ -20,7 +20,6 @@ type pickerModel struct {
 	matches    []int
 	cursor     int
 	width      int
-	height     int
 	selected   map[int]struct{}
 	cancelled  bool
 	confirmed  bool
@@ -43,7 +42,7 @@ func PickRepositories(candidates []repo.RepoCandidate) ([]repo.RepoCandidate, er
 	}
 
 	model := newPickerModel(candidates)
-	result, err := tea.NewProgram(model, tea.WithAltScreen()).Run()
+	result, err := tea.NewProgram(model).Run()
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +86,6 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-		m.height = msg.Height
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -133,12 +131,14 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m pickerModel) View() string {
 	var builder strings.Builder
 
+	builder.WriteString(searchLine(m))
+	builder.WriteString("\n")
+	builder.WriteString(statusLine(m))
+	builder.WriteString("\n")
+
 	if len(m.matches) == 0 {
 		builder.WriteString(faintStyle.Render("  no matches"))
-		builder.WriteString("\n")
-		content := builder.String()
-		footer := statusLine(m) + "\n" + searchLine(m)
-		return m.layout(content, footer)
+		return builder.String()
 	}
 
 	limit := m.visibleRows()
@@ -181,7 +181,7 @@ func (m pickerModel) View() string {
 		builder.WriteString("\n")
 	}
 
-	return m.layout(builder.String(), statusLine(m)+"\n"+searchLine(m))
+	return strings.TrimRight(builder.String(), "\n")
 }
 
 func statusLine(m pickerModel) string {
@@ -247,57 +247,11 @@ func (m *pickerModel) toggleCurrent() {
 	m.selected[current] = struct{}{}
 }
 
-func (m pickerModel) layout(content, footer string) string {
-	content = strings.TrimRight(content, "\n")
-	footer = strings.TrimRight(footer, "\n")
-
-	if m.height <= 0 {
-		if content == "" {
-			return footer
-		}
-		return content + "\n" + footer
-	}
-
-	contentLines := 0
-	if content != "" {
-		contentLines = strings.Count(content, "\n") + 1
-	}
-	footerLines := strings.Count(footer, "\n") + 1
-	spacerLines := m.height - contentLines - footerLines
-	if spacerLines < 1 {
-		spacerLines = 1
-	}
-
-	var builder strings.Builder
-	if content != "" {
-		builder.WriteString(content)
-		builder.WriteString("\n")
-	}
-	builder.WriteString(strings.Repeat("\n", spacerLines))
-	builder.WriteString(footer)
-	return builder.String()
-}
-
 func (m pickerModel) visibleRows() int {
-	if m.height <= 0 {
-		if len(m.matches) < maxVisibleResults {
-			return len(m.matches)
-		}
-		return maxVisibleResults
-	}
-
-	footerRows := 2
-	visible := m.height - footerRows
-	if visible < 1 {
-		return 1
-	}
-	if visible > maxVisibleResults {
-		visible = maxVisibleResults
-	}
-	if visible > len(m.matches) {
+	if len(m.matches) < maxVisibleResults {
 		return len(m.matches)
 	}
-	return visible
+	return maxVisibleResults
 }
 
 func collectSelected(candidates []repo.RepoCandidate, selected map[int]struct{}) []repo.RepoCandidate {
