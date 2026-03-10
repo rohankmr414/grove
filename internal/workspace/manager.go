@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/rohankmr414/grove/internal/config"
 	"github.com/rohankmr414/grove/internal/git"
 	"github.com/rohankmr414/grove/internal/repo"
+	"github.com/rohankmr414/grove/internal/ui"
 	"github.com/rohankmr414/grove/internal/util"
 )
 
@@ -60,25 +63,13 @@ func (m Manager) Init(ctx context.Context, name string, candidates []repo.RepoCa
 }
 
 func (m Manager) AddRepositories(ctx context.Context, ws Workspace, candidates []repo.RepoCandidate) error {
+	prepared, err := m.prepareRepositories(ctx, candidates)
+	if err != nil {
+		return err
+	}
+
 	for i, candidate := range candidates {
-		fmt.Printf("[%d/%d] %s\n", i+1, len(candidates), candidate.DisplayName())
-
-		canonicalPath := candidate.CachePath(m.cfg.RepoCacheRoot)
-		if _, err := os.Stat(canonicalPath); err == nil {
-			fmt.Printf("  using cached clone: %s\n", canonicalPath)
-		} else {
-			fmt.Printf("  cloning into cache: %s\n", canonicalPath)
-		}
-
-		canonicalPath, err := git.EnsureCanonicalClone(ctx, candidate, m.cfg.RepoCacheRoot)
-		if err != nil {
-			return fmt.Errorf("prepare clone for %s: %w", candidate.DisplayName(), err)
-		}
-
-		fmt.Printf("  fetching refs\n")
-		if err := git.Fetch(ctx, canonicalPath); err != nil {
-			return fmt.Errorf("fetch %s: %w", candidate.DisplayName(), err)
-		}
+		canonicalPath := prepared[i].canonicalPath
 
 		defaultBranch := candidate.DefaultBranch
 		if defaultBranch == "" {
@@ -88,17 +79,122 @@ func (m Manager) AddRepositories(ctx context.Context, ws Workspace, candidates [
 		branch := workspaceBranch(ws.Name)
 		worktreePath := filepath.Join(ws.Path, candidate.Name)
 		if _, err := os.Stat(worktreePath); err == nil {
-			fmt.Printf("  worktree already exists: %s\n\n", worktreePath)
 			continue
 		}
 
-		fmt.Printf("  creating worktree: %s (%s)\n", worktreePath, branch)
 		if err := git.AddWorktree(ctx, canonicalPath, worktreePath, branch, defaultBranch); err != nil {
 			return fmt.Errorf("create worktree for %s: %w", candidate.DisplayName(), err)
 		}
-		fmt.Printf("  done\n\n")
 	}
 	return nil
+}
+
+type preparedRepository struct {
+	canonicalPath string
+}
+
+func (m Manager) prepareRepositories(ctx context.Context, candidates []repo.RepoCandidate) ([]preparedRepository, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	progress := ui.NewRepoProgress(os.Stdout, candidates)
+	defer progress.Close()
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	results := make([]preparedRepository, len(candidates))
+	workerCount := min(len(candidates), max(2, min(runtime.GOMAXPROCS(0), 6)))
+	jobs := make(chan int)
+
+	var (
+		wg       sync.WaitGroup
+		firstErr error
+		errMu    sync.Mutex
+	)
+
+	setErr := func(err error) {
+		errMu.Lock()
+		defer errMu.Unlock()
+		if firstErr != nil {
+			return
+		}
+		firstErr = err
+		cancel()
+	}
+
+	for range workerCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for index := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				if err := m.prepareRepository(ctx, candidates[index], index, progress, &results[index]); err != nil {
+					setErr(err)
+					progress.Update(index, "failed", -1)
+					return
+				}
+			}
+		}()
+	}
+
+	for index := range candidates {
+		if ctx.Err() != nil {
+			break
+		}
+		jobs <- index
+	}
+	close(jobs)
+	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return results, nil
+}
+
+func (m Manager) prepareRepository(ctx context.Context, candidate repo.RepoCandidate, index int, progress *ui.RepoProgress, result *preparedRepository) error {
+	canonicalPath := candidate.CachePath(m.cfg.RepoCacheRoot)
+	if _, err := os.Stat(canonicalPath); err == nil {
+		progress.Update(index, "using cache", 100)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("check cache for %s: %w", candidate.DisplayName(), err)
+	} else {
+		progress.Update(index, "starting clone", 0)
+		var cloneErr error
+		canonicalPath, cloneErr = git.EnsureCanonicalClone(ctx, candidate, m.cfg.RepoCacheRoot, func(update git.CloneProgress) {
+			progress.Update(index, update.Message, update.Percent)
+		})
+		if cloneErr != nil {
+			return fmt.Errorf("prepare clone for %s: %w", candidate.DisplayName(), cloneErr)
+		}
+	}
+
+	progress.Update(index, "fetching refs", -1)
+	if err := git.Fetch(ctx, canonicalPath); err != nil {
+		return fmt.Errorf("fetch %s: %w", candidate.DisplayName(), err)
+	}
+
+	result.canonicalPath = canonicalPath
+	progress.Update(index, "ready", 100)
+	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (m Manager) DetectCurrent() (Workspace, error) {
