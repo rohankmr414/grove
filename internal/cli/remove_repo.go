@@ -26,6 +26,15 @@ func runRemoveRepo(args []string) error {
 		return err
 	}
 
+	if len(args) == 1 {
+		for _, repository := range repositories {
+			if repository.Name == args[0] {
+				return manager.RemoveRepositories(context.Background(), ws, args[0])
+			}
+		}
+		return fmt.Errorf("repository %q is not in workspace %q", args[0], ws.Name)
+	}
+
 	selected, err := ui.PickRepositories(repositories)
 	if err != nil {
 		return err

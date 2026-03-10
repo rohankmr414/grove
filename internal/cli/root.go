@@ -56,7 +56,7 @@ func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
 			"Remove repositories from the current workspace",
 			"Shows repositories already present in the current workspace and removes the selected worktrees.",
 			[]string{"rm"},
-			cobra.NoArgs,
+			cobra.MaximumNArgs(1),
 			runRemoveRepo,
 		),
 	)
@@ -190,6 +190,39 @@ func attachWorkspaceCompletion(root *cobra.Command) {
 		cmd, _, err := root.Find([]string{name})
 		if err == nil && cmd != nil {
 			cmd.ValidArgsFunction = workspaceCompletion
+		}
+	}
+
+	repoCompletion := func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		cfg, err := config.Load()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		manager := workspace.NewManager(cfg)
+		ws, err := manager.DetectCurrent()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		repositories, err := manager.WorkspaceRepositories(ws)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		names := make([]string, 0, len(repositories))
+		for _, repository := range repositories {
+			if toComplete == "" || len(repository.Name) >= len(toComplete) && repository.Name[:len(toComplete)] == toComplete {
+				names = append(names, repository.Name)
+			}
+		}
+		return names, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	for _, path := range [][]string{{"repo", "remove"}, {"repo", "rm"}} {
+		cmd, _, err := root.Find(path)
+		if err == nil && cmd != nil {
+			cmd.ValidArgsFunction = repoCompletion
 		}
 	}
 }
