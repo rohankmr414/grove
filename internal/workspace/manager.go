@@ -381,7 +381,7 @@ func workspaceBranch(name string) string {
 	if strings.Contains(name, "/") {
 		return name
 	}
-	return "feature/" + name
+	return "workspace/" + name
 }
 
 func repoState(ctx context.Context, repoPath string) (string, error) {

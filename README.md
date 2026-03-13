@@ -235,7 +235,7 @@ When you initialize a workspace, `grove`:
 Workspace branches use:
 
 ```text
-feature/<workspace>
+workspace/<workspace>
 ```
 
 If that branch does not exist, `grove` creates it from the repository default branch.
