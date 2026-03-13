@@ -21,10 +21,33 @@ type Config struct {
 	GitHub        GitHubConfig
 }
 
+func ConfigDir() (string, error) {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Clean(filepath.Join(xdg, "grove")), nil
+	}
+	return util.ExpandPath("~/.config/grove")
+}
+
+func ConfigPath() (string, error) {
+	configDir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, "config.yaml"), nil
+}
+
+func WorkspaceInitDir() (string, error) {
+	configDir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, "workspace-init"), nil
+}
+
 func Load() (Config, error) {
 	cfg := defaults()
 
-	configPath, err := util.ExpandPath("~/.config/grove/config.yaml")
+	configPath, err := ConfigPath()
 	if err != nil {
 		return Config{}, err
 	}

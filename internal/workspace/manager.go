@@ -53,12 +53,76 @@ func (m Manager) Init(ctx context.Context, name string, candidates []repo.RepoCa
 	if err := writeMarker(ws); err != nil {
 		return err
 	}
+	if err := m.seedWorkspaceRoot(ws); err != nil {
+		return err
+	}
 
 	if err := m.AddRepositories(ctx, ws, candidates); err != nil {
 		return err
 	}
 
 	fmt.Printf("\nWorkspace ready: %s\n", ws.Path)
+	return nil
+}
+
+func (m Manager) seedWorkspaceRoot(ws Workspace) error {
+	initDir, err := config.WorkspaceInitDir()
+	if err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(initDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read workspace init directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return fmt.Errorf("workspace init directory only supports files: %s", filepath.Join(initDir, entry.Name()))
+		}
+		if err := copyWorkspaceInitFile(ws.Path, filepath.Join(initDir, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyWorkspaceInitFile(workspacePath, sourcePath string) error {
+	sourceInfo, err := os.Stat(sourcePath)
+	if err != nil {
+		return fmt.Errorf("copy workspace init file %s: %w", sourcePath, err)
+	}
+	if sourceInfo.IsDir() {
+		return fmt.Errorf("workspace init path %s must be a file", sourcePath)
+	}
+
+	targetName := filepath.Base(sourcePath)
+	if targetName == markerFile {
+		return fmt.Errorf("workspace init file %s conflicts with reserved file %s", sourcePath, markerFile)
+	}
+
+	targetPath := filepath.Join(workspacePath, targetName)
+	if _, err := os.Stat(targetPath); err == nil {
+		return fmt.Errorf("workspace init file target already exists: %s", targetPath)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("check workspace init target %s: %w", targetPath, err)
+	}
+
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return fmt.Errorf("read workspace init file %s: %w", sourcePath, err)
+	}
+
+	mode := sourceInfo.Mode().Perm()
+	if mode == 0 {
+		mode = 0o644
+	}
+	if err := os.WriteFile(targetPath, data, mode); err != nil {
+		return fmt.Errorf("write workspace init file %s: %w", targetPath, err)
+	}
 	return nil
 }
 

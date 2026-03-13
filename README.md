@@ -90,12 +90,15 @@ Upgrade behavior:
 - if no compatible existing `grove version` output is available, the script proceeds with installation
 
 After install or upgrade, the script prints shell integration commands so `grove cd` and auto-entering a workspace after `grove init` work immediately.
+It also creates a default config at `$XDG_CONFIG_HOME/grove/config.yaml` when `XDG_CONFIG_HOME` is set, or `~/.config/grove/config.yaml` otherwise, if one does not already exist. The same default config directory also gets a `workspace-init/` folder for files you want copied into every new workspace.
 
 ## Configuration
 
 Config file:
 
 ```text
+$XDG_CONFIG_HOME/grove/config.yaml
+# or, if XDG_CONFIG_HOME is unset:
 ~/.config/grove/config.yaml
 ```
 
@@ -116,6 +119,8 @@ Notes:
 - `github.orgs` is optional
 - if `orgs` is empty, `grove` queries repositories visible to the authenticated GitHub user
 - cached canonical clones under `repo_cache_root` are also used as a discovery source
+- files placed in `$XDG_CONFIG_HOME/grove/workspace-init/`, or `~/.config/grove/workspace-init/` when `XDG_CONFIG_HOME` is unset, are copied into the root of each newly initialized workspace
+- this is useful for files like `CLAUDE.md`, `.tool-versions`, or team-specific bootstrap docs
 
 ## GitHub Auth
 
@@ -243,3 +248,4 @@ If that branch does not exist, `grove` creates it from the repository default br
 Each workspace also includes VS Code metadata:
 
 - `.vscode/settings.json` enables Git repository detection in subfolders and scans two levels deep, so opening the workspace root with `code .` finds each repo more reliably.
+- top-level files in `~/.config/grove/workspace-init/` are copied into the workspace root before repositories are added.

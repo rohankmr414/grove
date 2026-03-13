@@ -7,6 +7,9 @@ BINARY_NAME="grove"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${1:-${VERSION:-latest}}"
 BINARY_PATH="$INSTALL_DIR/$BINARY_NAME"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/grove"
+CONFIG_PATH="$CONFIG_DIR/config.yaml"
+WORKSPACE_INIT_DIR="$CONFIG_DIR/workspace-init"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -52,6 +55,38 @@ esac
 fetch() {
   # shellcheck disable=SC2086
   $FETCH "$1"
+}
+
+write_default_config() {
+  mkdir -p "$CONFIG_DIR" "$WORKSPACE_INIT_DIR"
+
+  if [ -e "$CONFIG_PATH" ]; then
+    echo "Keeping existing config at $CONFIG_PATH"
+    return
+  fi
+
+  cat >"$CONFIG_PATH" <<EOF
+# Root directory where grove creates workspace folders.
+workspace_root: ~/groves
+
+# Canonical clone cache used to create workspace worktrees.
+repo_cache_root: ~/.grove/repos
+
+# Place top-level files here to copy them into every new workspace:
+# $WORKSPACE_INIT_DIR
+
+github:
+  # Enable GitHub repository discovery.
+  enabled: true
+
+  # Optional: limit discovery to specific orgs.
+  # Leave this commented out to use repositories visible to the
+  # authenticated GitHub user.
+  # orgs:
+  #   - acme
+EOF
+
+  echo "Wrote default config to $CONFIG_PATH"
 }
 
 installed_version() {
@@ -114,9 +149,12 @@ else
   chmod 0755 "$BINARY_PATH"
 fi
 
+write_default_config
+
 shell_name="${SHELL##*/}"
 
 echo "Installed $BINARY_PATH"
+echo "Workspace init directory: $WORKSPACE_INIT_DIR"
 echo
 echo "Shell integration and completion:"
 case "$shell_name" in
