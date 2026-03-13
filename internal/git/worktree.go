@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
 	"github.com/rohankmr414/grove/internal/util"
@@ -9,6 +10,10 @@ import (
 
 func AddWorktree(ctx context.Context, canonicalPath, worktreePath, branch, defaultBranch string) error {
 	if err := util.EnsureDir(filepath.Dir(worktreePath)); err != nil {
+		return err
+	}
+
+	if err := DetachHead(ctx, canonicalPath); err != nil {
 		return err
 	}
 
@@ -29,4 +34,21 @@ func CanonicalRoot(ctx context.Context, repoPath string) (string, error) {
 		return "", err
 	}
 	return filepath.Dir(commonDir), nil
+}
+
+func DetachHead(ctx context.Context, canonicalPath string) error {
+	head, err := util.Output(ctx, "git", "-C", canonicalPath, "symbolic-ref", "--quiet", "--short", "HEAD")
+	if err != nil {
+		return nil
+	}
+
+	if head == "" {
+		return nil
+	}
+
+	if err := util.Run(ctx, "git", "-C", canonicalPath, "switch", "--detach", "--quiet"); err != nil {
+		return fmt.Errorf("detach cache HEAD at %s: %w", canonicalPath, err)
+	}
+
+	return nil
 }
