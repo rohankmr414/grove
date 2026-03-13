@@ -2,8 +2,10 @@ package workspace
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/rohankmr414/grove/internal/util"
 )
@@ -37,6 +39,12 @@ func (m Manager) writeVSCodeSettings(ws Workspace) error {
 		settings[key] = value
 	}
 
+	repositories, err := workspaceRepositories(ws.Path)
+	if err != nil {
+		return err
+	}
+	settings["git.scanRepositories"] = repositories
+
 	if err := util.EnsureDir(filepath.Dir(settingsPath)); err != nil {
 		return err
 	}
@@ -47,4 +55,31 @@ func (m Manager) writeVSCodeSettings(ws Workspace) error {
 	}
 	data = append(data, '\n')
 	return os.WriteFile(settingsPath, data, 0o644)
+}
+
+func workspaceRepositories(workspacePath string) ([]string, error) {
+	entries, err := os.ReadDir(workspacePath)
+	if err != nil {
+		return nil, fmt.Errorf("read workspace directory: %w", err)
+	}
+
+	repositories := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() == ".vscode" {
+			continue
+		}
+
+		gitPath := filepath.Join(workspacePath, entry.Name(), ".git")
+		if _, err := os.Stat(gitPath); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("check git metadata for %q: %w", entry.Name(), err)
+		}
+
+		repositories = append(repositories, entry.Name())
+	}
+
+	sort.Strings(repositories)
+	return repositories, nil
 }
