@@ -7,10 +7,14 @@ import (
 )
 
 func BranchExists(ctx context.Context, repoPath, branch string) bool {
-	if err := util.Run(ctx, "git", "-C", repoPath, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+	if refExists(ctx, repoPath, "refs/heads/"+branch) {
 		return true
 	}
-	return util.Run(ctx, "git", "-C", repoPath, "show-ref", "--verify", "--quiet", "refs/remotes/origin/"+branch) == nil
+	return refExists(ctx, repoPath, "refs/remotes/origin/"+branch)
+}
+
+func refExists(ctx context.Context, repoPath, ref string) bool {
+	return util.Run(ctx, "git", "-C", repoPath, "show-ref", "--verify", "--quiet", ref) == nil
 }
 
 func CurrentBranch(ctx context.Context, repoPath string) (string, error) {

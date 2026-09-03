@@ -21,7 +21,16 @@ func AddWorktree(ctx context.Context, canonicalPath, worktreePath, branch, defau
 		return util.Run(ctx, "git", "-C", canonicalPath, "worktree", "add", worktreePath, branch)
 	}
 
-	return util.Run(ctx, "git", "-C", canonicalPath, "worktree", "add", "-b", branch, worktreePath, defaultBranch)
+	// Fetch updates the remote-tracking branch, while the cache's local default
+	// branch can remain at the revision that was current when it was cloned.
+	// Start new workspace branches from the fetched ref so new worktrees contain
+	// the latest remote revision.
+	startPoint := defaultBranch
+	remoteDefaultBranch := "refs/remotes/origin/" + defaultBranch
+	if refExists(ctx, canonicalPath, remoteDefaultBranch) {
+		startPoint = remoteDefaultBranch
+	}
+	return util.Run(ctx, "git", "-C", canonicalPath, "worktree", "add", "-b", branch, worktreePath, startPoint)
 }
 
 func RemoveWorktree(ctx context.Context, canonicalPath, worktreePath string) error {

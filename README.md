@@ -243,7 +243,7 @@ Workspace branches use:
 workspace/<workspace>
 ```
 
-If that branch does not exist, `grove` creates it from the repository default branch.
+If that branch does not exist, `grove` creates it from the latest fetched revision of the repository's remote default branch.
 
 Each workspace also includes VS Code metadata:
 
