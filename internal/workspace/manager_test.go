@@ -1,11 +1,63 @@
 package workspace
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/rohankmr414/grove/internal/config"
+	"github.com/rohankmr414/grove/internal/util"
 )
+
+func TestRemoveWorkspaceWithPartiallyRemovedWorktree(t *testing.T) {
+	ctx := context.Background()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical := filepath.Join(root, "cache", "repo")
+	workspaceRoot := filepath.Join(root, "workspaces")
+	ws := Workspace{Name: "feature", Path: filepath.Join(workspaceRoot, "feature")}
+	if err := os.MkdirAll(ws.Path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeMarker(ws); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) {
+		t.Helper()
+		if err := util.Run(ctx, "git", args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("init", canonical)
+	run("-C", canonical, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "initial")
+	worktree := filepath.Join(ws.Path, "repo")
+	run("-C", canonical, "worktree", "add", "-b", "feature", worktree)
+	gitFile, err := os.ReadFile(filepath.Join(worktree, ".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run("-C", canonical, "worktree", "remove", "--force", worktree)
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string][]byte{".git": gitFile, "leftover.txt": []byte("leftover")} {
+		if err := os.WriteFile(filepath.Join(worktree, name), content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manager := NewManager(config.Config{WorkspaceRoot: workspaceRoot})
+	if err := manager.Remove(ctx, ws.Name); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(ws.Path); !os.IsNotExist(err) {
+		t.Fatalf("workspace still exists: %v", err)
+	}
+	run("-C", canonical, "rev-parse", "--verify", "refs/heads/feature")
+}
 
 func TestWorkspaceBranch(t *testing.T) {
 	t.Parallel()
